@@ -17,6 +17,7 @@ class MyApp extends StatelessWidget {
       title: 'ThingsBoard App',
       theme: ThemeData(
         primarySwatch: Colors.blue,
+        scaffoldBackgroundColor: Colors.white,
       ),
       home: const LoginScreen(),
     );
@@ -58,7 +59,6 @@ class _LoginScreenState extends State<LoginScreen> {
           _passwordController.text,
         );
         if (loginResponse != null) {
-          // Extract token and customer ID
           final token = loginResponse['token'];
           _customerId = loginResponse['customerId'];
 
@@ -66,7 +66,6 @@ class _LoginScreenState extends State<LoginScreen> {
           print('Token: $token');
           print('Customer ID: $_customerId');
 
-          // Navigate to device list
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
@@ -115,7 +114,6 @@ class _LoginScreenState extends State<LoginScreen> {
       final responseData = jsonDecode(loginResponse.body);
       final token = responseData['token'];
 
-      // Fetch user details to get customer ID
       final userDetails = await _fetchUserDetails(baseUrl, token);
       if (userDetails != null) {
         return {
@@ -163,50 +161,61 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Login')),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              TextFormField(
-                controller: _emailController,
-                decoration: const InputDecoration(labelText: 'Email'),
-                keyboardType: TextInputType.emailAddress,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your email';
-                  }
-                  return null;
-                },
-              ),
-              TextFormField(
-                controller: _passwordController,
-                decoration: const InputDecoration(labelText: 'Password'),
-                obscureText: true,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter your password';
-                  }
-                  return null;
-                },
-              ),
-              const SizedBox(height: 20),
-              if (_errorMessage != null)
-                Text(
-                  _errorMessage!,
-                  style: const TextStyle(color: Colors.red),
+      body: SingleChildScrollView(
+        child: Column(
+          children: [
+            SizedBox(height: 100),
+            Image.asset(
+              'assets/images/logo.png',
+              height: 200,
+            ),
+            SizedBox(height: 1),
+            Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Form(
+                key: _formKey,
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    TextFormField(
+                      controller: _emailController,
+                      decoration: const InputDecoration(labelText: 'Email'),
+                      keyboardType: TextInputType.emailAddress,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter your email';
+                        }
+                        return null;
+                      },
+                    ),
+                    TextFormField(
+                      controller: _passwordController,
+                      decoration: const InputDecoration(labelText: 'Password'),
+                      obscureText: true,
+                      validator: (value) {
+                        if (value == null || value.isEmpty) {
+                          return 'Please enter your password';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 20),
+                    if (_errorMessage != null)
+                      Text(
+                        _errorMessage!,
+                        style: const TextStyle(color: Colors.red),
+                      ),
+                    ElevatedButton(
+                      onPressed: _isLoading ? null : _login,
+                      child: _isLoading
+                          ? const CircularProgressIndicator()
+                          : const Text('Login'),
+                    ),
+                  ],
                 ),
-              ElevatedButton(
-                onPressed: _isLoading ? null : _login,
-                child: _isLoading
-                    ? const CircularProgressIndicator()
-                    : const Text('Login'),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -276,7 +285,8 @@ class _DeviceListScreenState extends State<DeviceListScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Devices'),
+        title: const Text('Dostupni senzori:'),
+        backgroundColor: Colors.white,
         actions: [
           IconButton(
             icon: const Icon(Icons.logout),
@@ -353,12 +363,33 @@ class DeviceDetailsScreen extends StatefulWidget {
 
 class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
   late Future<Map<String, dynamic>> _telemetryFuture;
+  late Future<List<dynamic>> _sharedAttributesFuture;
+  final TextEditingController _desiredTempController = TextEditingController();
+  bool _isUpdating = false;
+  String? _updateMessage;
+  bool _controlBoolean = false;
 
   @override
   void initState() {
     super.initState();
     _telemetryFuture = _fetchTelemetry();
+    _sharedAttributesFuture = _fetchSharedAttributes();
   }
+
+  @override
+  void dispose() {
+    _desiredTempController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _refreshData() {
+    setState(() {
+      _telemetryFuture = _fetchTelemetry();
+      _sharedAttributesFuture = _fetchSharedAttributes();
+    });
+    return Future.value();
+  }
+
 
   Future<Map<String, dynamic>> _fetchTelemetry() async {
     const String baseUrl = 'http://iot.leonunger.from.hr';
@@ -388,52 +419,336 @@ class _DeviceDetailsScreenState extends State<DeviceDetailsScreen> {
     }
   }
 
+  Future<List<dynamic>> _fetchSharedAttributes() async {
+    const String baseUrl = 'http://iot.leonunger.from.hr';
+    final url = '$baseUrl/api/plugins/telemetry/DEVICE/${widget.deviceId}/values/attributes/SHARED_SCOPE';
+    final headers = {
+      'Content-Type': 'application/json',
+      'x-authorization': 'Bearer ${widget.token}',
+    };
+
+    print('Shared Attributes Request:');
+    print('URL: $url');
+    print('Headers: $headers');
+    print('Device ID: ${widget.deviceId}');
+
+    final response = await http.get(
+      Uri.parse(url),
+      headers: headers,
+    );
+
+    print('Shared Attributes Response:');
+    print('Status Code: ${response.statusCode}');
+    print('Body: ${response.body}');
+
+    if (response.statusCode == 200) {
+      try {
+        final attributes = jsonDecode(response.body) as List<dynamic>;
+        for (var attribute in attributes) {
+          if (attribute['key'] == 'controlBoolean') {
+            _controlBoolean = attribute['value'] == true;
+          }
+        }
+        return attributes;
+      } catch (e) {
+        print('Error decoding Shared Attributes JSON: $e');
+        print('Response body was: ${response.body}');
+        throw Exception('Failed to decode shared attributes: $e');
+      }
+    } else {
+      throw Exception('Failed to fetch shared attributes: ${response.body}');
+    }
+  }
+
+
+  Future<void> _updateDesiredTemp() async {
+    setState(() {
+      _isUpdating = true;
+      _updateMessage = null;
+    });
+    const String baseUrl = 'http://iot.leonunger.from.hr';
+    final url = '$baseUrl/api/plugins/telemetry/DEVICE/${widget.deviceId}/SHARED_SCOPE';
+    final headers = {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ${widget.token}',
+    };
+    final desiredTemp = _desiredTempController.text;
+    final body = jsonEncode({'desiredTemp': desiredTemp});
+
+    print('Update Desired Temp Request:');
+    print('URL: $url');
+    print('Headers: $headers');
+    print('Body: $body');
+
+    try {
+      final response = await http.post(
+        Uri.parse(url),
+        headers: headers,
+        body: body,
+      );
+
+      print('Update Desired Temp Response:');
+      print('Status Code: ${response.statusCode}');
+      print('Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _updateMessage = 'Desired temperature updated successfully!';
+        });
+        _refreshData();
+      } else {
+        setState(() {
+          _updateMessage = 'Failed to update desired temperature: ${response.body}';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _updateMessage = 'Error updating desired temperature: $e';
+      });
+    } finally {
+      setState(() {
+        _isUpdating = false;
+      });
+    }
+  }
+
+  Future<void> _updateControlBoolean(bool value) async {
+    setState(() {
+      _isUpdating = true;
+      _updateMessage = null;
+    });
+    const String baseUrl = 'http://iot.leonunger.from.hr';
+    final url = '$baseUrl/api/plugins/telemetry/DEVICE/${widget.deviceId}/SHARED_SCOPE';
+    final headers = {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ${widget.token}',
+    };
+    final body = jsonEncode({'controlBoolean': value});
+
+    print('Update controlBoolean Request:');
+    print('URL: $url');
+    print('Headers: $headers');
+    print('Body: $body');
+
+    try {
+      final response = await http.post(
+        Uri.parse(url),
+        headers: headers,
+        body: body,
+      );
+
+      print('Update controlBoolean Response:');
+      print('Status Code: ${response.statusCode}');
+      print('Body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _controlBoolean = value;
+          _updateMessage = 'Manual override updated successfully!';
+        });
+        _refreshData();
+      } else {
+        setState(() {
+          _updateMessage = 'Failed to update manual override: ${response.body}';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _updateMessage = 'Error updating manual override: $e';
+      });
+    } finally {
+      setState(() {
+        _isUpdating = false;
+      });
+    }
+  }
+
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text('Telemetry for ${widget.deviceName}')),
-      body: FutureBuilder<Map<String, dynamic>>(
-        future: _telemetryFuture,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          } else if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          } else if (snapshot.hasData) {
-            final telemetryData = snapshot.data!;
-            return ListView(
-              padding: const EdgeInsets.all(16.0),
-              children: telemetryData.entries.map((entry) {
-                final key = entry.key;
-                final values = entry.value as List<dynamic>;
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      key,
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+    return Scaffold( appBar: AppBar(
+      title: Text('${widget.deviceName}'),
+      backgroundColor: Colors.white,
+      foregroundColor: Colors.black,
+      actions: [
+        IconButton(
+          icon: const Icon(Icons.refresh),
+          onPressed: _refreshData,
+        ),
+      ],
+    ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Container(
+                    padding: const EdgeInsets.all(8.0),
+                    child: Center(
+                      child: Image.asset(
+                        'assets/images/pool.png',
+                        fit: BoxFit.contain,
+                      ),
                     ),
-                    const SizedBox(height: 8),
-                    for (final value in values)
-                      if (value != null && value is Map<String, dynamic> && value.containsKey('ts') && value.containsKey('value'))
-                        Text(
-                          '${DateTime.fromMillisecondsSinceEpoch(value['ts'])}: ${value['value']}',
-                          style: const TextStyle(fontSize: 16),
-                        )
-                      else
+                  ),
+                ),
+                SizedBox(width: 20),
+                Expanded(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         const Text(
-                          'No data available',
-                          style: TextStyle(fontSize: 16),
+                          'Temperature:',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                         ),
-                    const SizedBox(height: 16),
-                  ],
-                );
-              }).toList(),
-            );
-          } else {
-            return const Center(child: Text('No telemetry data found.'));
-          }
-        },
+                        FutureBuilder<Map<String, dynamic>>(
+                          future: _telemetryFuture,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState == ConnectionState.waiting) {
+                              return const CircularProgressIndicator();
+                            } else if (snapshot.hasError) {
+                              return Text('Error: ${snapshot.error}');
+                            } else if (snapshot.hasData) {
+                              final telemetryData = snapshot.data!;
+                              if (telemetryData.containsKey('temperature')) {
+                                final temperatureValues = telemetryData['temperature'] as List<dynamic>;
+                                if (temperatureValues.isNotEmpty) {
+                                  final latestTemperature = temperatureValues.last;
+                                  return Text(
+                                    latestTemperature != null && latestTemperature is Map<String, dynamic> && latestTemperature.containsKey('value')
+                                        ? '${latestTemperature['value']} °C'
+                                        : 'No temperature data',
+                                    style: const TextStyle(fontSize: 16),
+                                  );
+                                } else {
+                                  return const Text('No temperature data');
+                                }
+                              } else {
+                                return const Text('No temperature data');
+                              }
+                            } else {
+                              return const Text('No temperature data');
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 20),
+
+                        const Text(
+                          'Heater active:',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        FutureBuilder<List<dynamic>>(
+                          future: _sharedAttributesFuture,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState == ConnectionState.waiting) {
+                              return const CircularProgressIndicator();
+                            } else if (snapshot.hasError) {
+                              return Text('Error: ${snapshot.error}');
+                            } else if (snapshot.hasData) {
+                              final sharedAttributes = snapshot.data!;
+                              String controlBooleanValue = 'No data';
+                              for (var attribute in sharedAttributes) {
+                                if (attribute['key'] == 'controlBoolean') {
+                                  controlBooleanValue = attribute['value'].toString();
+                                  break;
+                                }
+                              }
+                              return Text(
+                                controlBooleanValue,
+                                style: const TextStyle(fontSize: 16),
+                              );
+                            } else {
+                              return const Text('No data');
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 20),
+
+                        const Text(
+                          'Desired temperature:',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        FutureBuilder<List<dynamic>>(
+                          future: _sharedAttributesFuture,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState == ConnectionState.waiting) {
+                              return const CircularProgressIndicator();
+                            } else if (snapshot.hasError) {
+                              return Text('Error: ${snapshot.error}');
+                            } else if (snapshot.hasData) {
+                              final sharedAttributes = snapshot.data!;
+                              String desiredTempValue = 'No data';
+                              for (var attribute in sharedAttributes) {
+                                if (attribute['key'] == 'desiredTemp') {
+                                  desiredTempValue = attribute['value'].toString();
+                                  break;
+                                }
+                              }
+                              return Text(
+                                desiredTempValue,
+                                style: const TextStyle(fontSize: 16),
+                              );
+                            } else {
+                              return const Text('No data');
+                            }
+                          },
+                        ),
+                        const SizedBox(height: 20),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'Manual heater override:',
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.normal),
+                ),
+                Switch(
+                  value: _controlBoolean,
+                  onChanged: _isUpdating ? null : (value) => _updateControlBoolean(value),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+
+            TextField(
+              controller: _desiredTempController,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Desired Temperature',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 10),
+            ElevatedButton(
+              onPressed: _isUpdating ? null : _updateDesiredTemp,
+              child: _isUpdating
+                  ? const CircularProgressIndicator()
+                  : const Text('Update Desired Temperature'),
+            ),
+
+
+            if (_updateMessage != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 10.0),
+                child: Text(
+                  _updateMessage!,
+                  style: TextStyle(
+                    color: _updateMessage!.startsWith('Failed') || _updateMessage!.startsWith('Error') ? Colors.red : Colors.green,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
